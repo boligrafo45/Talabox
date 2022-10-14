@@ -36,6 +36,8 @@ commande = ""
 time_omx = ""
 msg_ardui = ""
 i = 0
+#Tableau où on va sauvegarder les lignes de fichier .csv
+#La premier ligne est [-0.1, 1, 1, 1, 1] pour que le dispositif puisse s'initialiser
 tabCommande = []
 butG = 12
 butD = 16
@@ -63,14 +65,17 @@ GPIO.setup(butD2, GPIO.IN,pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(butH2, GPIO.IN,pull_up_down=GPIO.PUD_DOWN)
 GPIO.setup(butB2, GPIO.IN,pull_up_down=GPIO.PUD_DOWN)
 
-# ON a changé tabCommande[i][1] par tabCommande[0][1]
+######On a changé tabCommande[i][1] par tabCommande[0][1]
 #Pour assurer que c'est la première ligne du tabCommande qui devait changer.
 def callbackCap(channel):
     if channel == butG :
         print("G")
-#         ser.write(b"G\n")
-        #ser.write(str.encode("S9100090000E"))
+        #Arduino reçoit un message en format "bytes" ASCII, on utilise str.encode
+        #C'est le même que utiliser b"...
+#       ser.write(b"G\n")
+        #Le numéro 9 sur le message indique que le fin de course est activé
         ser.write(str.encode("S9100090000E"))    #horiz butée gauche
+        #Longueur max=100
         tabCommande[0][1]=100
         print(tabCommande)
         
@@ -78,18 +83,21 @@ def callbackCap(channel):
         print("D")
 #         ser.write(b"D\n")
         ser.write(str.encode("S9010090000E"))    #horiz butée droite
+        #Longueur min=0
         tabCommande[0][1]=0
         print(tabCommande)
     elif channel == butB :
         print("B")
 #         ser.write(b"B\n")
         ser.write(str.encode("S9001090000E"))    #verti butée bas
+        #Hauteur min=0
         tabCommande[0][2]=0
         print(tabCommande)
     elif channel == butH :
         print("H")
 #         ser.write(b"H\n")
         ser.write(str.encode("S9000190000E"))   #verti butée haut
+        #Hauteur max=100
         tabCommande[0][2]=100
         print(tabCommande)
     elif channel == butG2 :
@@ -127,11 +135,7 @@ GPIO.add_event_detect(butH2, GPIO.RISING, callback=callbackCap, bouncetime=bounc
 GPIO.add_event_detect(butB2, GPIO.RISING, callback=callbackCap, bouncetime=bounce)
 GPIO.add_event_detect(butD2, GPIO.RISING, callback=callbackCap, bouncetime=bounce)
 
-# ##
-# 
 # #TODO fonction qui calcule la distance parcourue pour de vrai si jamais le chariot est trop lent afin de changer la case suivant
-# 
-
 
 #formate la consigne en intensité à transmettre à l'arduino
 def intTOstr(a):
@@ -143,9 +147,9 @@ def intTOstr(a):
 
 #Création d'un tableau contenant toutes les commandes
 def getTab():
+    #Creer un tableau -> [-0.1, 1, 1, 1, 1]+ .csv
     newTab = [[-0.1,1,1,1,1]]
     with open('/home/pi/Documents/Commandes/Luc Perera recherche rythmiques.csv', 'r') as file:
-      #with open('/home/pi/Documents/Commandes/Luc Perera recherche rythmiques.csv', 'r') as file:
         reader = csv.reader(file, delimiter=";")
         for row in reader:
             new_row = [float(row[0]), float(row[1]), float(row[2]),float(row[3]), float(row[4])]
@@ -169,6 +173,8 @@ def distTOvit(dx,dy,ts,numb):
 
 #passage des consignes en position en consignes pour l'arduino
 def asserv(tabNx , tabPv):
+    #Sustraction des lignes du tableau de commandes. 
+    #On compare la position des chariots par rapport à la position précedent.
     t = tabNx[0]-tabPv[0]
     l = tabNx[1]-tabPv[1]
     h = tabNx[2]-tabPv[2]
@@ -193,7 +199,7 @@ def asserv(tabNx , tabPv):
 
 
 #initialise la position sur gauche et bas pour le 1er rail (x=0;y=0)
-#Noms "initPosition" et "initPosition2" selon le post-it (on a changé le sens)
+#####Noms "initPosition" et "initPosition2" selon le post-it (on a changé le sens)
 def initPosition2():
     global tabCommande
     while (tabCommande[0][3]==1 or tabCommande[0][4] == 1):
@@ -202,7 +208,7 @@ def initPosition2():
             #POUR INITIALISER!!!!!(S1.........E)    
             #Vitesse X=25
             #Vitesse Y=10
-            #ON deplace X et Y
+            #On deplace X et Y
             ser.write(str.encode("S1251010000E"))
 #             print(" deplacement l et h")
 #             print(tabCommande)
@@ -249,10 +255,13 @@ def volumeMusique(valCommande):
 ##Fait tout
 
 try:
+    #Création du tableu qui contient les positions (.csv)
     tabCommande = getTab()
+    #Initialisation des chariots avec les buttées
     initPosition()
     initPosition2()
     temps = time.time()
+    #Raspberry lance la musique avec omxplayer
     subprocess.Popen(["omxplayer",'/home/pi/Documents/Musiques/Luc Perera recherche rythmiques.wav'])
     #TODO time.sleep(0.3)
     for i in range(1,len(tabCommande)):
@@ -278,7 +287,10 @@ try:
                 tps = tabCommande[i][0]
                 time_omx = str(int(tps/3600))+ ":" + str(int((tps%3600)/60)) + ":" + str(int(tps%60))
                 subprocess.Popen(["omxplayer","--vol",volume,"-l",time_omx,'/home/pi/Documents/Musiques/Luc Perera recherche rythmiques.wav'])
+            #Création message que la Raspberry envoie à l'Arduino.
+            #Le message est crée avec l'info du tableau de commande
             msg_ardui = asserv(tabCommande[i],tabCommande[i-1])
+            #Message écrit sur le serial
             ser.write(str.encode("S"+msg_ardui+"E"))
             temps = temps+(tabCommande[i][0]-tabCommande[i-1][0])
             time.sleep(max(temps-time.time(),0))
